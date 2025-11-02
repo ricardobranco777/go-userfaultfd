@@ -58,6 +58,27 @@ func TestNewFile(t *testing.T) {
 	}
 }
 
+// TestNewFile2 tests that /dev/userfaultfd can be opened via ioctl.
+func TestNewFile2(t *testing.T) {
+	if !HaveDevUserfaultfd {
+		t.Skip("/dev/userfaultfd does not exist")
+	}
+	f, err := NewFile2(0)
+	if err != nil {
+		if errors.Is(err, unix.EACCES) {
+			t.Skip("/dev/userfaultfd is not readable")
+		} else {
+			t.Fatalf("NewFile2 failed: %v", err)
+		}
+	}
+	defer f.Close()
+
+	fd := int(f.Fd())
+	if fd < 0 {
+		t.Fatalf("invalid fd: %d", fd)
+	}
+}
+
 func TestApiHandshake(t *testing.T) {
 	f, err := NewFile(flags)
 	if err != nil {
