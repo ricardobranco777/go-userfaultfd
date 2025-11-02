@@ -14,12 +14,26 @@ type Uffd struct {
 }
 
 // New creates a new userfaultfd and performs the two-step API handshake.
+// Returns an *Uffd or an error.
 func New(flags int, features uint64) (*Uffd, error) {
 	file, err := NewFile(flags)
 	if err != nil {
 		return nil, err
 	}
+	return newCommon(file, flags, features)
+}
 
+// NewDevUserfaultfd creates a new userfaultfd and performs the two-step API handshake.
+// Returns an *Uffd or an error.
+func New2(flags int, features uint64) (*Uffd, error) {
+	file, err := NewFile2(flags)
+	if err != nil {
+		return nil, err
+	}
+	return newCommon(file, flags, features)
+}
+
+func newCommon(file *os.File, flags int, features uint64) (*Uffd, error) {
 	api, err := ApiHandshake(int(file.Fd()), 0)
 	if err != nil {
 		file.Close()

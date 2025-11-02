@@ -6,6 +6,9 @@ var (
 	// True if /proc/sys/vm/unprivileged_userfaultfd == 1
 	UnprivilegedUserfaultfd bool
 
+	// Supports /dev/userfaultfd
+	HaveDevUserfaultfd bool
+
 	// Kernel supports user mode only flag
 	HaveUserModeOnly bool
 
@@ -36,5 +39,9 @@ func init() {
 
 	if UFFD_USER_MODE_ONLY != 0 {
 		HaveUserModeOnly = true
+	}
+
+	if USERFAULTFD_IOC_NEW != 0 {
+		HaveDevUserfaultfd = true
 	}
 }

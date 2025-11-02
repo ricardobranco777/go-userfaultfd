@@ -29,6 +29,23 @@ func NewFile(flags int) (*os.File, error) {
 	return os.NewFile(fd, "userfaultfd"), nil
 }
 
+// NewFile2 creates a a new userfaultfd file descriptor with the given flags.
+// Returns an *os.File wrapping the fd or an error.
+func NewFile2(flags int) (*os.File, error) {
+	dev, err := os.OpenFile("/dev/userfaultfd", os.O_RDWR, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer dev.Close()
+
+	// ioctl(fd, USERFAULTFD_IOC_NEW, flags)
+	fd, _, errno := unix.Syscall(unix.SYS_IOCTL, dev.Fd(), uintptr(USERFAULTFD_IOC_NEW), uintptr(flags))
+	if errno != 0 {
+		return nil, os.NewSyscallError("ioctl(USERFAULTFD_IOC_NEW)", errno)
+	}
+	return os.NewFile(fd, "userfaultfd"), nil
+}
+
 // ApiHandshake negotiates the userfaultfd API version and features.
 // Returns the negotiated info or an error.
 func ApiHandshake(fd int, features uint64) (UffdioApi, error) {
