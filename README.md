@@ -2,7 +2,6 @@
 Golang interface to Linux's [userfaultfd](https://man7.org/linux/man-pages/man2/userfaultfd.2.html) system call.
 
 TODO
-- Add ReadMsg to read events.
 - Implement higher level API.
 
 NOTES

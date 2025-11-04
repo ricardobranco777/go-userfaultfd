@@ -3,7 +3,11 @@
 package userfaultfd
 
 import (
+	"fmt"
 	"os"
+	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 // Uffd wraps a userfaultfd file descriptor.
@@ -133,4 +137,22 @@ func (u *Uffd) WriteProtect(start, length uintptr, mode uint64) error {
 // Zeropage zero-fills a memory range.
 func (u *Uffd) Zeropage(start, length uintptr, mode uint64) (int64, error) {
 	return Zeropage(u.Fd(), start, length, mode)
+}
+
+// ReadMsg reads one event message from the userfaultfd.
+// It blocks until an event is available unless the fd is nonblocking.
+// Returns the message and any read or decoding error.
+func (u *Uffd) ReadMsg() (*UffdMsg, error) {
+	var msg UffdMsg
+	const msgSize = int(unsafe.Sizeof(msg))
+	buf := (*[msgSize]byte)(unsafe.Pointer(&msg))[:]
+
+	n, err := unix.Read(u.Fd(), buf)
+	if err != nil {
+		return nil, os.NewSyscallError("read", err)
+	}
+	if n != msgSize {
+		return nil, fmt.Errorf("truncated read: got %d bytes, expected %d", n, msgSize)
+	}
+	return &msg, nil
 }

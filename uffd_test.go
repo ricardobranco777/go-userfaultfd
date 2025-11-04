@@ -71,3 +71,19 @@ func TestNew2(t *testing.T) {
 		uffd.Close()
 	}
 }
+
+func TestReadMsgNoEvent(t *testing.T) {
+	uffd, err := New(flags|unix.O_NONBLOCK, 0)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer uffd.Close()
+
+	_, err = uffd.ReadMsg()
+	if err == nil {
+		t.Fatalf("expected EAGAIN or EWOULDBLOCK, got nil")
+	}
+	if !errors.Is(err, unix.EAGAIN) && !errors.Is(err, unix.EWOULDBLOCK) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
