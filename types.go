@@ -79,9 +79,9 @@ type UffdMsg struct {
 }
 
 type UffdMsgPagefault struct {
-	Flags    uint32
+	Flags    uint64
 	Address  uint64
-	Reserved uint32
+	Reserved uint64
 }
 
 func (m *UffdMsg) GetPagefault() *UffdMsgPagefault {
