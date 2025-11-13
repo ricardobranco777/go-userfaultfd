@@ -23,6 +23,7 @@ func TestStructSizes(t *testing.T) {
 		{"UffdioRegister", unsafe.Sizeof(UffdioRegister{}), 32},
 		{"UffdioWriteprotect", unsafe.Sizeof(UffdioWriteprotect{}), 24},
 		{"UffdioZeropage", unsafe.Sizeof(UffdioZeropage{}), 32},
+		{"UffdMsgPagefault", unsafe.Sizeof(UffdMsgPagefault{}), 24},
 	}
 
 	for _, tt := range tests {
