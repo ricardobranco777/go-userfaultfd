@@ -129,12 +129,12 @@ func TestRegisterAndUnregister(t *testing.T) {
 	addr := uintptr(unsafe.Pointer(&mem[0]))
 
 	// Attempt registration
-	if _, err = Register(int(f.Fd()), addr, uintptr(pageSize), UFFDIO_REGISTER_MODE_MISSING); err != nil {
+	if _, err = Register(int(f.Fd()), addr, pageSize, UFFDIO_REGISTER_MODE_MISSING); err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
 
 	// Now unregister
-	if err := Unregister(int(f.Fd()), addr, uintptr(pageSize)); err != nil {
+	if err := Unregister(int(f.Fd()), addr, pageSize); err != nil {
 		t.Fatalf("Unregister failed: %v", err)
 	}
 }
@@ -176,19 +176,19 @@ func setupUserfaultfd(t *testing.T, features uint64) (fd int, addr uintptr, clea
 
 	addr = uintptr(unsafe.Pointer(&mem[0]))
 
-	mode := uint64(UFFDIO_REGISTER_MODE_MISSING)
+	mode := UFFDIO_REGISTER_MODE_MISSING
 	if features&UFFD_FEATURE_PAGEFAULT_FLAG_WP != 0 {
 		mode |= UFFDIO_REGISTER_MODE_WP
 	}
 
-	if _, err := Register(fd, addr, uintptr(pageSize), mode); err != nil {
+	if _, err := Register(fd, addr, pageSize, mode); err != nil {
 		f.Close()
 		unix.Munmap(mem)
 		t.Fatalf("Register failed: %v", err)
 	}
 
 	cleanup = func() {
-		_ = Unregister(fd, addr, uintptr(pageSize))
+		_ = Unregister(fd, addr, pageSize)
 		_ = unix.Munmap(mem)
 		_ = f.Close()
 	}
@@ -245,10 +245,10 @@ func TestContinue(t *testing.T) {
 	addr := uintptr(unsafe.Pointer(&mem[0]))
 
 	// Register for MINOR fault handling
-	if _, err = Register(fd, addr, uintptr(pageSize), UFFDIO_REGISTER_MODE_MINOR); err != nil {
+	if _, err = Register(fd, addr, pageSize, UFFDIO_REGISTER_MODE_MINOR); err != nil {
 		t.Fatalf("Register for minor faults failed: %v", err)
 	}
-	defer Unregister(fd, addr, uintptr(pageSize))
+	defer Unregister(fd, addr, pageSize)
 
 	// Remove the page table entries to trigger minor faults
 	if err := unix.Madvise(mem, unix.MADV_DONTNEED); err != nil {
@@ -256,7 +256,7 @@ func TestContinue(t *testing.T) {
 	}
 
 	// Now UFFDIO_CONTINUE should work - it maps the existing page
-	if err := Continue(fd, addr, uintptr(pageSize), 0); err != nil {
+	if err := Continue(fd, addr, pageSize, 0); err != nil {
 		t.Errorf("Continue failed: %v", err)
 	}
 
@@ -276,7 +276,7 @@ func TestCopy(t *testing.T) {
 	}
 	src := uintptr(unsafe.Pointer(&srcMem[0]))
 
-	n, err := Copy(fd, dst, src, uintptr(len(srcMem)), 0)
+	n, err := Copy(fd, dst, src, len(srcMem), 0)
 	if err != nil {
 		t.Errorf("Copy failed: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestMove(t *testing.T) {
 	fd, _, cleanup := setupUserfaultfd(t, UFFD_FEATURE_MOVE)
 	defer cleanup()
 
-	pageSize := uintptr(unix.Getpagesize())
+	pageSize := unix.Getpagesize()
 
 	// Create disjoint anonymous mappings
 	src, err := unix.Mmap(-1, 0, int(pageSize), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_PRIVATE|unix.MAP_ANONYMOUS)
@@ -348,7 +348,7 @@ func TestPoison(t *testing.T) {
 	fd, addr, cleanup := setupUserfaultfd(t, UFFD_FEATURE_POISON)
 	defer cleanup()
 
-	updated, err := Poison(fd, addr, uintptr(unix.Getpagesize()), 0)
+	updated, err := Poison(fd, addr, unix.Getpagesize(), 0)
 	if err != nil {
 		t.Errorf("Poison failed: %v", err)
 	}
@@ -361,7 +361,7 @@ func TestWake(t *testing.T) {
 	fd, addr, cleanup := setupUserfaultfd(t, 0)
 	defer cleanup()
 
-	if err := Wake(fd, addr, uintptr(unix.Getpagesize())); err != nil {
+	if err := Wake(fd, addr, unix.Getpagesize()); err != nil {
 		t.Errorf("Wake failed: %v", err)
 	}
 }
@@ -374,7 +374,7 @@ func TestWriteProtect(t *testing.T) {
 	fd, addr, cleanup := setupUserfaultfd(t, UFFD_FEATURE_PAGEFAULT_FLAG_WP)
 	defer cleanup()
 
-	if err := WriteProtect(fd, addr, uintptr(unix.Getpagesize()), UFFDIO_WRITEPROTECT_MODE_WP); err != nil {
+	if err := WriteProtect(fd, addr, unix.Getpagesize(), UFFDIO_WRITEPROTECT_MODE_WP); err != nil {
 		t.Errorf("WriteProtect (enable) failed: %v", err)
 	}
 }
@@ -383,7 +383,7 @@ func TestZeropage(t *testing.T) {
 	fd, addr, cleanup := setupUserfaultfd(t, 0)
 	defer cleanup()
 
-	n, err := Zeropage(fd, addr, uintptr(unix.Getpagesize()), 0)
+	n, err := Zeropage(fd, addr, unix.Getpagesize(), 0)
 	if err != nil {
 		t.Errorf("Zeropage failed: %v", err)
 	}

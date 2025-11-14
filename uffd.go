@@ -95,47 +95,47 @@ func (u *Uffd) Ioctls() uint64 {
 }
 
 // Continue resolves a minor page fault.
-func (u *Uffd) Continue(start, length uintptr, mode uint64) error {
+func (u *Uffd) Continue(start uintptr, length int, mode int) error {
 	return Continue(u.Fd(), start, length, mode)
 }
 
 // Copy resolves a page fault by copying from src to dst.
-func (u *Uffd) Copy(dst, src, length uintptr, mode uint64) (int64, error) {
+func (u *Uffd) Copy(dst, src uintptr, length int, mode int) (int64, error) {
 	return Copy(u.Fd(), dst, src, length, mode)
 }
 
 // Move moves pages from src to dst.
-func (u *Uffd) Move(dst, src, length uintptr, mode uint64) (int64, error) {
+func (u *Uffd) Move(dst, src uintptr, length int, mode int) (int64, error) {
 	return Move(u.Fd(), dst, src, length, mode)
 }
 
 // Poison poisons pages in the given range.
-func (u *Uffd) Poison(start, length uintptr, mode uint64) (int64, error) {
+func (u *Uffd) Poison(start uintptr, length int, mode int) (int64, error) {
 	return Poison(u.Fd(), start, length, mode)
 }
 
 // Register registers a memory range with the given mode.
-func (u *Uffd) Register(start, length uintptr, mode uint64) (*UffdioRegister, error) {
+func (u *Uffd) Register(start uintptr, length int, mode int) (*UffdioRegister, error) {
 	return Register(u.Fd(), start, length, mode)
 }
 
 // Unregister unregisters a previously registered range.
-func (u *Uffd) Unregister(start, length uintptr) error {
+func (u *Uffd) Unregister(start uintptr, length int) error {
 	return Unregister(u.Fd(), start, length)
 }
 
 // Wake wakes blocked page faults in the given range.
-func (u *Uffd) Wake(start, length uintptr) error {
+func (u *Uffd) Wake(start uintptr, length int) error {
 	return Wake(u.Fd(), start, length)
 }
 
 // WriteProtect enables/disables write protection.
-func (u *Uffd) WriteProtect(start, length uintptr, mode uint64) error {
+func (u *Uffd) WriteProtect(start uintptr, length int, mode int) error {
 	return WriteProtect(u.Fd(), start, length, mode)
 }
 
 // Zeropage zero-fills a memory range.
-func (u *Uffd) Zeropage(start, length uintptr, mode uint64) (int64, error) {
+func (u *Uffd) Zeropage(start uintptr, length int, mode int) (int64, error) {
 	return Zeropage(u.Fd(), start, length, mode)
 }
 
