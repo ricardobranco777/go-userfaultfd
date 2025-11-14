@@ -159,7 +159,7 @@ func setupUserfaultfd(t *testing.T, features uint64) (fd int, addr uintptr, clea
 			t.Fatalf("Create failed: %v", err)
 		}
 		got := api.Features
-		if api, err = ApiHandshake(int(f.Fd()), features); err != nil {
+		if _, err = ApiHandshake(int(f.Fd()), features); err != nil {
 			f.Close()
 			t.Skipf("requested features 0x%x not fully supported (got 0x%x)", features, got)
 		}

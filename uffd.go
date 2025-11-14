@@ -13,7 +13,7 @@ import (
 // Uffd wraps a userfaultfd file descriptor.
 type Uffd struct {
 	File  *os.File
-	api   UffdioApi
+	api   *UffdioApi
 	flags int
 }
 
