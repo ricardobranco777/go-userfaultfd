@@ -94,6 +94,11 @@ func (u *Uffd) Ioctls() uint64 {
 	return u.api.Ioctls
 }
 
+// Returns true if ioctl is available.
+func (u *Uffd) HasIoctl(ioctl int) bool {
+	return ioctl != -1 && u.api.Ioctls&(1<<ioctl) != 0
+}
+
 // Continue resolves a minor page fault.
 func (u *Uffd) Continue(start uintptr, length int, mode int) error {
 	return Continue(u.Fd(), start, length, mode)

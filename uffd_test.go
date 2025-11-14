@@ -87,3 +87,27 @@ func TestReadMsgNoEvent(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestHasIoctl(t *testing.T) {
+	uffd, err := New(flags|unix.O_NONBLOCK, 0)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer uffd.Close()
+
+	tests := []struct {
+		ioctl int
+		want  bool
+	}{
+		{_UFFDIO_API, true},
+		{_UFFDIO_REGISTER, true},
+		{_UFFDIO_UNREGISTER, true},
+	}
+
+	for _, tt := range tests {
+		got := uffd.HasIoctl(tt.ioctl)
+		if got != tt.want {
+			t.Fatalf("HasIoctl(%d) = %v, want %v", tt.ioctl, got, tt.want)
+		}
+	}
+}
