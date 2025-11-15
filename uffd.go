@@ -94,6 +94,11 @@ func (u *Uffd) Ioctls() uint64 {
 	return u.api.Ioctls
 }
 
+// Returns string representation.
+func (u *Uffd) String() string {
+	return fmt.Sprintf("uffd(fd=%d, features=%#x, ioctls=%#x)", u.Fd(), u.api.Features, u.api.Ioctls)
+}
+
 // Returns true if ioctl is available.
 func (u *Uffd) HasIoctl(ioctl int) bool {
 	return ioctl != -1 && u.api.Ioctls&(1<<ioctl) != 0
