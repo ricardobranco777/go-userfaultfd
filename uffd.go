@@ -3,7 +3,9 @@
 package userfaultfd
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"unsafe"
 
@@ -139,9 +141,10 @@ func (u *Uffd) Zeropage(start uintptr, length int, mode int) (int64, error) {
 // ReadMsgTimeout reads one event message from the userfaultfd.
 //
 // timeout semantics:
-//   timeout == 0   : non-blocking poll/read; return immediately if no event
-//   timeout > 0    : wait up to timeout milliseconds for an event
-//   timeout < 0    : block indefinitely until an event arrives
+//
+//	timeout == 0   : non-blocking poll/read; return immediately if no event
+//	timeout > 0    : wait up to timeout milliseconds for an event
+//	timeout < 0    : block indefinitely until an event arrives
 //
 // For file descriptors opened with O_NONBLOCK, read() returns EAGAIN when no
 // event is available. For blocking file descriptors, poll(2) always reports
@@ -204,4 +207,56 @@ func (u *Uffd) ReadMsgTimeout(timeout int) (*UffdMsg, error) {
 // Internally, ReadMsg is equivalent to ReadMsgTimeout(-1).
 func (u *Uffd) ReadMsg() (*UffdMsg, error) {
 	return u.ReadMsgTimeout(-1)
+}
+
+// PageProvider defines a callback used to fill a page of data
+// after a UFFD pagefault. The implementation must write up to
+// len(page) bytes into the slice and return the number of bytes.
+// Returning io.EOF is okay for short pages near EOF.
+type PageProvider func(fileOffset int64, page []byte) (int, error)
+
+// Serve runs a pagefault loop and resolves faults using the provided PageProvider.
+// Blocks until closed or provider returns a non-nil error.
+func (u *Uffd) Serve(base uintptr, mapLen int, pageSize int, provider PageProvider) error {
+	for {
+		msg, err := u.ReadMsg()
+		if err != nil {
+			return err
+		}
+
+		if msg.Event != UFFD_EVENT_PAGEFAULT {
+			continue
+		}
+
+		pf := msg.GetPagefault()
+		faultAddr := uintptr(pf.Address)
+
+		pageMask := uintptr(pageSize - 1)
+		pageAddr := faultAddr &^ pageMask
+		pageIndex := (pageAddr - base) / uintptr(pageSize)
+		fileOffset := int64(pageIndex) * int64(pageSize)
+
+		// allocate page buffer
+		buf := make([]byte, pageSize)
+
+		// fetch from provider
+		if _, err = provider(fileOffset, buf); err != nil && !errors.Is(err, io.EOF) {
+			return fmt.Errorf("provider error at offset %d: %w", fileOffset, err)
+		}
+
+		// satisfy the page fault
+		if _, err := u.Copy(pageAddr, uintptr(unsafe.Pointer(&buf[0])), pageSize, 0); err != nil {
+			// Page already provided?
+			if errors.Is(err, unix.EEXIST) {
+				continue
+			}
+			return fmt.Errorf("UFFD Copy failed at 0x%x offset %d: %w", pageAddr, fileOffset, err)
+		}
+	}
+}
+
+func FilePageProvider(f *os.File) PageProvider {
+	return func(offset int64, page []byte) (int, error) {
+		return f.ReadAt(page, offset)
+	}
 }

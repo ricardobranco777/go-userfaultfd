@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
@@ -296,5 +297,73 @@ func TestReadMsgTimeoutTable(t *testing.T) {
 
 			tt.expectFn(t, resultErr, time.Since(start))
 		})
+	}
+}
+
+func TestUffdWithLocalFile(t *testing.T) {
+	// Open a local file we can page in
+	f, err := os.Open("testdata/largefile.bin")
+	if err != nil {
+		t.Skipf("skipping: testdata file missing: %v", err)
+	}
+	defer f.Close()
+
+	pageSize := unix.Getpagesize()
+	size := int64(pageSize * 256) // 256 pages for test
+	info, err := f.Stat()
+	if err != nil {
+		t.Fatalf("stat failed: %v", err)
+	}
+	if info.Size() < size {
+		size = info.Size()
+	}
+
+	// Create userfaultfd in non-blocking mode
+	u, err := New(flags|unix.O_NONBLOCK, 0)
+	if err != nil {
+		t.Skipf("skipping: userfaultfd not available: %v", err)
+	}
+	defer u.Close()
+
+	mapLen := roundUp(int(size), pageSize)
+	full, err := unix.Mmap(-1, 0, mapLen, unix.PROT_READ|unix.PROT_WRITE,
+		unix.MAP_PRIVATE|unix.MAP_ANONYMOUS)
+	if err != nil {
+		t.Fatalf("mmap failed: %v", err)
+	}
+	defer unix.Munmap(full)
+
+	base := uintptr(unsafe.Pointer(&full[0]))
+
+	// Register mapping
+	if _, err := u.Register(base, mapLen, UFFDIO_REGISTER_MODE_MISSING); err != nil {
+		t.Skipf("skipping: UFFD register failed: %v", err)
+	}
+
+	// Simple file-backed provider
+	provider := func(offset int64, page []byte) (int, error) {
+		return f.ReadAt(page, offset)
+	}
+
+	// Start handler
+	done := make(chan error, 1)
+	go func() {
+		done <- u.Serve(base, mapLen, pageSize, provider)
+	}()
+
+	// Touch the mapping to trigger faults over the region
+	data := full[:size]
+	for i := int64(0); i < size; i += int64(pageSize) {
+		_ = data[i] // trigger fault
+	}
+
+	// Give the handler some time to process
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Serve exited with error: %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		// ok: still running, no panic, page faults resolved
 	}
 }

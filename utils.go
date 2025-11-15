@@ -34,3 +34,8 @@ func retryOnEINTR(fn func() error) error {
 		return err
 	}
 }
+
+// roundUp rounds n up to a multiple of align (align must be power of 2).
+func roundUp(n, align int) int {
+	return (n + align - 1) &^ (align - 1)
+}
