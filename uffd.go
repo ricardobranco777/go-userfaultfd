@@ -17,9 +17,13 @@ type Uffd struct {
 	flags int
 }
 
+// Force non-blocking so we can use poll()
+const force = unix.O_NONBLOCK
+
 // New creates a new userfaultfd and performs the two-step API handshake.
 // Returns an *Uffd or an error.
 func New(flags int, features uint64) (*Uffd, error) {
+	flags |= force
 	file, err := NewFile(flags)
 	if err != nil {
 		return nil, err
@@ -30,6 +34,7 @@ func New(flags int, features uint64) (*Uffd, error) {
 // NewDevUserfaultfd creates a new userfaultfd and performs the two-step API handshake.
 // Returns an *Uffd or an error.
 func New2(flags int, features uint64) (*Uffd, error) {
+	flags |= force
 	file, err := NewFile2(flags)
 	if err != nil {
 		return nil, err
@@ -150,41 +155,36 @@ func (u *Uffd) Zeropage(start uintptr, length int, mode int) (int64, error) {
 }
 
 // ReadMsg reads one event message from the userfaultfd.
-// It blocks until an event is available unless the fd is nonblocking.
+// If no event is available, it returns unix.EAGAIN.
 // Returns the message and any read or decoding error.
 func (u *Uffd) ReadMsg() (*UffdMsg, error) {
-	// Non-blocking case: poll first
-	if u.flags&unix.O_NONBLOCK != 0 {
-		pfd := []unix.PollFd{{
-			Fd:     int32(u.Fd()),
-			Events: unix.POLLIN,
-		}}
+	pfd := []unix.PollFd{{
+		Fd:     int32(u.Fd()),
+		Events: unix.POLLIN,
+	}}
 
-		err := retryOnEINTR(func() error {
-			n, err := unix.Poll(pfd, 0)
-			if err != nil {
-				return err
-			}
-			if n == 0 {
-				return unix.EAGAIN
-			}
-
-			re := pfd[0].Revents
-			if re&(unix.POLLERR|unix.POLLHUP|unix.POLLNVAL) != 0 {
-				return fmt.Errorf("poll error: revents=%#x", re)
-			}
-			return nil
-		})
-
+	if err := retryOnEINTR(func() error {
+		n, err := unix.Poll(pfd, 0)
 		if err != nil {
-			return nil, os.NewSyscallError("poll", err)
+			return err
 		}
+		if n == 0 {
+			return unix.EAGAIN
+		}
+
+		re := pfd[0].Revents
+		if re&(unix.POLLERR|unix.POLLHUP|unix.POLLNVAL) != 0 {
+			return fmt.Errorf("poll error: revents=%#x", re)
+		}
+		return nil
+	}); err != nil {
+		return nil, os.NewSyscallError("poll", err)
 	}
 
 	var msg UffdMsg
 	buf := (*[unsafe.Sizeof(msg)]byte)(unsafe.Pointer(&msg))[:]
 
-	err := retryOnEINTR(func() error {
+	if err := retryOnEINTR(func() error {
 		n, err := unix.Read(u.Fd(), buf)
 		if err != nil {
 			return err
@@ -193,9 +193,7 @@ func (u *Uffd) ReadMsg() (*UffdMsg, error) {
 			return fmt.Errorf("truncated read: got %d, expected %d", n, len(buf))
 		}
 		return nil
-	})
-
-	if err != nil {
+	}); err != nil {
 		return nil, os.NewSyscallError("read", err)
 	}
 
