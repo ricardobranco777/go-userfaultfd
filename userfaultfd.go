@@ -29,7 +29,7 @@ func Open(flags int) (*os.File, error) {
 	}
 
 	// Fallback only for specific expected errors.
-	if errno != unix.ENOSYS && errno != unix.EPERM {
+	if !HaveDevUserfaultfd || errno != unix.ENOSYS && errno != unix.EPERM {
 		return nil, os.NewSyscallError("userfaultfd", errno)
 	}
 
