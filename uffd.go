@@ -19,8 +19,6 @@ type Uffd struct {
 // New creates a new userfaultfd and performs the two-step API handshake.
 // Returns an *Uffd or an error.
 func New(flags int, features uint64) (*Uffd, error) {
-	// Force non-blocking so we can use poll() & also force close-on-exec.
-	flags |= unix.O_NONBLOCK | unix.O_CLOEXEC
 	file, err := Open(flags)
 	if err != nil {
 		return nil, err
