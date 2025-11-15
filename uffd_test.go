@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -144,5 +145,61 @@ func TestHasIoctl(t *testing.T) {
 		if got != tt.want {
 			t.Fatalf("HasIoctl(%d) = %v, want %v", tt.ioctl, got, tt.want)
 		}
+	}
+}
+
+func TestReadMsgTimeoutImmediate(t *testing.T) {
+	uffd, err := New(flags|unix.O_NONBLOCK, 0)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer uffd.Close()
+
+	_, err = uffd.ReadMsgTimeout(0)
+	if err == nil {
+		t.Fatalf("expected EAGAIN, got nil")
+	}
+	if !errors.Is(err, unix.EAGAIN) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestReadMsgTimeoutShort(t *testing.T) {
+	uffd, err := New(flags|unix.O_NONBLOCK, 0)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer uffd.Close()
+
+	// 50ms timeout for reasonable CI runtime
+	_, err = uffd.ReadMsgTimeout(50)
+	if err == nil {
+		t.Fatalf("expected timeout EAGAIN, got nil")
+	}
+	if !errors.Is(err, unix.EAGAIN) {
+		t.Fatalf("unexpected error from ReadMsgTimeout(50): %v", err)
+	}
+}
+
+func TestReadMsgTimeoutBlocking(t *testing.T) {
+	uffd, err := New(flags|unix.O_NONBLOCK, 0)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer uffd.Close()
+
+	done := make(chan struct{})
+
+	go func() {
+		// Should block here waiting for poll(-1)
+		_, _ = uffd.ReadMsgTimeout(-1)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		t.Fatalf("ReadMsgTimeout(-1) returned unexpectedly without event")
+	case <-time.After(50 * time.Millisecond):
+		// expected: timeout waiting for blocking call to return
 	}
 }

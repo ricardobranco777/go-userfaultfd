@@ -155,21 +155,30 @@ func (u *Uffd) Zeropage(start uintptr, length int, mode int) (int64, error) {
 	return Zeropage(u.Fd(), start, length, mode)
 }
 
-// ReadMsg reads one event message from the userfaultfd.
-// If no event is available, it returns unix.EAGAIN.
-// Returns the message and any read or decoding error.
-func (u *Uffd) ReadMsg() (*UffdMsg, error) {
+// ReadMsgTimeout reads one event message from the userfaultfd,
+// waiting up to timeout milliseconds for an event.
+//
+// timeout semantics:
+//
+//	 0  : return immediately if no event
+//	>0 : wait up to timeout milliseconds
+//	<0 : block indefinitely
+//
+// Returns wrapped unix.EAGAIN if the timeout expires.
+func (u *Uffd) ReadMsgTimeout(timeout int) (*UffdMsg, error) {
 	pfd := []unix.PollFd{{
 		Fd:     int32(u.Fd()),
 		Events: unix.POLLIN,
 	}}
 
+	// poll(2) errno retry behavior wrapped in retryOnEINTR
 	if err := retryOnEINTR(func() error {
-		n, err := unix.Poll(pfd, 0)
+		n, err := unix.Poll(pfd, timeout)
 		if err != nil {
 			return err
 		}
 		if n == 0 {
+			// timeout or would block
 			return unix.EAGAIN
 		}
 
@@ -199,4 +208,10 @@ func (u *Uffd) ReadMsg() (*UffdMsg, error) {
 	}
 
 	return &msg, nil
+}
+
+// ReadMsg attempts to read one event message without blocking.
+// If no event is available, it returns wrapped unix.EAGAIN.
+func (u *Uffd) ReadMsg() (*UffdMsg, error) {
+	return u.ReadMsgTimeout(0)
 }
