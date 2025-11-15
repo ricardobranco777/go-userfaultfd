@@ -160,42 +160,44 @@ func (u *Uffd) ReadMsg() (*UffdMsg, error) {
 			Events: unix.POLLIN,
 		}}
 
-		for {
+		err := retryOnEINTR(func() error {
 			n, err := unix.Poll(pfd, 0)
 			if err != nil {
-				if err == unix.EINTR {
-					continue
-				}
-				return nil, os.NewSyscallError("poll", err)
+				return err
 			}
-
 			if n == 0 {
-				return nil, os.NewSyscallError("poll", unix.EAGAIN)
+				return unix.EAGAIN
 			}
 
 			re := pfd[0].Revents
 			if re&(unix.POLLERR|unix.POLLHUP|unix.POLLNVAL) != 0 {
-				return nil, fmt.Errorf("poll error: revents=%#x", re)
+				return fmt.Errorf("poll error: revents=%#x", re)
 			}
-			break
+			return nil
+		})
+
+		if err != nil {
+			return nil, os.NewSyscallError("poll", err)
 		}
 	}
 
 	var msg UffdMsg
 	buf := (*[unsafe.Sizeof(msg)]byte)(unsafe.Pointer(&msg))[:]
 
-	for {
+	err := retryOnEINTR(func() error {
 		n, err := unix.Read(u.Fd(), buf)
 		if err != nil {
-			if err == unix.EINTR {
-				continue
-			}
-			return nil, os.NewSyscallError("read", err)
+			return err
 		}
-
 		if n != len(buf) {
-			return nil, fmt.Errorf("truncated read: got %d, expected %d", n, len(buf))
+			return fmt.Errorf("truncated read: got %d, expected %d", n, len(buf))
 		}
-		return &msg, nil
+		return nil
+	})
+
+	if err != nil {
+		return nil, os.NewSyscallError("read", err)
 	}
+
+	return &msg, nil
 }
