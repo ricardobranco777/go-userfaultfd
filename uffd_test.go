@@ -90,7 +90,7 @@ func TestReadMsgNonBlocking(t *testing.T) {
 }
 
 func TestHasIoctl(t *testing.T) {
-	uffd, err := New(flags|unix.O_NONBLOCK, 0)
+	uffd, err := New(flags, 0)
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestReadMsgTimeoutShort(t *testing.T) {
 }
 
 func TestReadMsgTimeoutBlocking(t *testing.T) {
-	uffd, err := New(flags|unix.O_NONBLOCK, 0)
+	uffd, err := New(flags, 0)
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
