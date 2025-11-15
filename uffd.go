@@ -255,8 +255,8 @@ func (u *Uffd) Serve(base uintptr, mapLen int, pageSize int, provider PageProvid
 	}
 }
 
-func FilePageProvider(f *os.File) PageProvider {
+func ReaderAtPageProvider(r io.ReaderAt) PageProvider {
 	return func(offset int64, page []byte) (int, error) {
-		return f.ReadAt(page, offset)
+		return r.ReadAt(page, offset)
 	}
 }

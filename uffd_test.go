@@ -353,9 +353,7 @@ func TestUffdWithLocalFile(t *testing.T) {
 	}
 
 	// Simple file-backed provider
-	provider := func(offset int64, page []byte) (int, error) {
-		return f.ReadAt(page, offset)
-	}
+	provider := ReaderAtPageProvider(f)
 
 	// Start handler
 	done := make(chan error, 1)
