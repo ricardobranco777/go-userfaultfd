@@ -152,24 +152,18 @@ func (u *Uffd) ReadMsgTimeout(timeout int) (*UffdMsg, error) {
 		Events: unix.POLLIN,
 	}}
 
-	// poll(2) errno retry behavior wrapped in retryOnEINTR
 	if err := retryOnEINTR(func() error {
-		n, err := unix.Poll(pfd, timeout)
+		_, err := unix.Poll(pfd, timeout)
 		if err != nil {
 			return err
-		}
-		if n == 0 {
-			// timeout or would block
-			return unix.EAGAIN
-		}
-
-		re := pfd[0].Revents
-		if re&(unix.POLLERR|unix.POLLHUP|unix.POLLNVAL) != 0 {
-			return fmt.Errorf("poll error: revents=%#x", re)
 		}
 		return nil
 	}); err != nil {
 		return nil, os.NewSyscallError("poll", err)
+	}
+	re := pfd[0].Revents
+	if re&(unix.POLLERR|unix.POLLHUP|unix.POLLNVAL) != 0 {
+		return nil, &PollError{Revents: re}
 	}
 
 	var msg UffdMsg
