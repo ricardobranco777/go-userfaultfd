@@ -3,7 +3,10 @@
 package userfaultfd
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"errors"
+	"io"
 	"os"
 	"testing"
 	"time"
@@ -300,6 +303,15 @@ func TestReadMsgTimeoutTable(t *testing.T) {
 	}
 }
 
+// computeHash reads the entire file in normal I/O mode
+func computeHash(r io.Reader) ([]byte, error) {
+	h := sha256.New()
+	if _, err := io.Copy(h, r); err != nil {
+		return nil, err
+	}
+	return h.Sum(nil), nil
+}
+
 func TestUffdWithLocalFile(t *testing.T) {
 	// Open a local file we can page in
 	f, err := os.Open("testdata/largefile.bin")
@@ -366,4 +378,23 @@ func TestUffdWithLocalFile(t *testing.T) {
 	case <-time.After(500 * time.Millisecond):
 		// ok: still running, no panic, page faults resolved
 	}
+
+	// --- Hash original file
+	f.Seek(0, io.SeekStart)
+	expectedHash, err := computeHash(f)
+	if err != nil {
+		t.Fatalf("failed computing reference hash: %v", err)
+	}
+
+	// --- Hash content of mmap region (which fault-handled data)
+	h2 := sha256.New()
+	if _, err := h2.Write(data); err != nil {
+		t.Fatalf("failed hashing mmap content: %v", err)
+	}
+	actualHash := h2.Sum(nil)
+
+	if !bytes.Equal(expectedHash, actualHash) {
+		t.Fatalf("content mismatch: expected %x got %x", expectedHash, actualHash)
+	}
+
 }
