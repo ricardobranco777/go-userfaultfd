@@ -2,6 +2,10 @@
 
 package userfaultfd
 
+import (
+	"os"
+)
+
 var (
 	// True if /proc/sys/vm/unprivileged_userfaultfd == 1
 	UnprivilegedUserfaultfd bool
@@ -18,6 +22,8 @@ var (
 	HaveIoctlPoison       bool
 	HaveIoctlWriteProtect bool
 )
+
+var pageSize = os.Getpagesize()
 
 func init() {
 	// Check sysctl for unprivileged_userfaultfd

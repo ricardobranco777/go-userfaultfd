@@ -84,8 +84,6 @@ func TestRegisterAndUnregister(t *testing.T) {
 		t.Fatalf("ApiHandshake failed: %v", err)
 	}
 
-	pageSize := unix.Getpagesize()
-
 	// tmpfs-backed mapping (shared memory)
 	tmp, err := os.CreateTemp("/dev/shm", "uffd_test")
 	if err != nil {
@@ -146,7 +144,6 @@ func setupUserfaultfd(t *testing.T, features uint64) (fd uintptr, addr uintptr, 
 
 	fd = f.Fd()
 
-	pageSize := unix.Getpagesize()
 	mem, err := unix.Mmap(-1, 0, pageSize, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_PRIVATE|unix.MAP_ANONYMOUS)
 	if err != nil {
 		f.Close()
@@ -203,8 +200,6 @@ func TestContinue(t *testing.T) {
 	defer os.Remove(tmp.Name())
 	defer tmp.Close()
 
-	pageSize := unix.Getpagesize()
-
 	// Write some data to the file to create backing pages
 	data := make([]byte, pageSize)
 	for i := range data {
@@ -249,7 +244,7 @@ func TestCopy(t *testing.T) {
 	fd, dst, cleanup := setupUserfaultfd(t, 0)
 	defer cleanup()
 
-	srcMem := make([]byte, unix.Getpagesize())
+	srcMem := make([]byte, os.Getpagesize())
 	for i := range srcMem {
 		srcMem[i] = 0xAA
 	}
@@ -271,8 +266,6 @@ func TestMove(t *testing.T) {
 
 	fd, _, cleanup := setupUserfaultfd(t, UFFD_FEATURE_MOVE)
 	defer cleanup()
-
-	pageSize := unix.Getpagesize()
 
 	// Create disjoint anonymous mappings
 	src, err := unix.Mmap(-1, 0, int(pageSize), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_PRIVATE|unix.MAP_ANONYMOUS)
@@ -327,7 +320,7 @@ func TestPoison(t *testing.T) {
 	fd, addr, cleanup := setupUserfaultfd(t, UFFD_FEATURE_POISON)
 	defer cleanup()
 
-	updated, err := Poison(fd, addr, unix.Getpagesize(), 0)
+	updated, err := Poison(fd, addr, os.Getpagesize(), 0)
 	if err != nil {
 		t.Errorf("Poison failed: %v", err)
 	}
@@ -340,7 +333,7 @@ func TestWake(t *testing.T) {
 	fd, addr, cleanup := setupUserfaultfd(t, 0)
 	defer cleanup()
 
-	if err := Wake(fd, addr, unix.Getpagesize()); err != nil {
+	if err := Wake(fd, addr, os.Getpagesize()); err != nil {
 		t.Errorf("Wake failed: %v", err)
 	}
 }
@@ -353,7 +346,7 @@ func TestWriteProtect(t *testing.T) {
 	fd, addr, cleanup := setupUserfaultfd(t, UFFD_FEATURE_PAGEFAULT_FLAG_WP)
 	defer cleanup()
 
-	if err := WriteProtect(fd, addr, unix.Getpagesize(), UFFDIO_WRITEPROTECT_MODE_WP); err != nil {
+	if err := WriteProtect(fd, addr, os.Getpagesize(), UFFDIO_WRITEPROTECT_MODE_WP); err != nil {
 		t.Errorf("WriteProtect (enable) failed: %v", err)
 	}
 }
@@ -362,11 +355,11 @@ func TestZeropage(t *testing.T) {
 	fd, addr, cleanup := setupUserfaultfd(t, 0)
 	defer cleanup()
 
-	n, err := Zeropage(fd, addr, unix.Getpagesize(), 0)
+	n, err := Zeropage(fd, addr, os.Getpagesize(), 0)
 	if err != nil {
 		t.Errorf("Zeropage failed: %v", err)
 	}
-	if n != int64(unix.Getpagesize()) {
+	if n != int64(os.Getpagesize()) {
 		t.Errorf("Zeropage returned unexpected length: got %d", n)
 	}
 }

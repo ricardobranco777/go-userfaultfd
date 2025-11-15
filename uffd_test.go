@@ -3,17 +3,21 @@
 package userfaultfd
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"errors"
+	"io"
 	"os"
 	"testing"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
 
 func TestNew(t *testing.T) {
 	// Try creating a userfaultfd with no special features
-	uffd, err := New(flags|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	uffd, err := New(flags|unix.O_CLOEXEC, 0)
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
@@ -50,7 +54,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestReadMsgNoEvent(t *testing.T) {
-	uffd, err := New(flags|unix.O_NONBLOCK, 0)
+	uffd, err := New(flags, 0)
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
@@ -72,7 +76,7 @@ func TestReadMsgNoEvent(t *testing.T) {
 }
 
 func TestReadMsgNonBlocking(t *testing.T) {
-	uffd, err := New(flags|unix.O_NONBLOCK, 0)
+	uffd, err := New(flags, 0)
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
@@ -119,7 +123,7 @@ func TestHasIoctl(t *testing.T) {
 }
 
 func TestReadMsgTimeoutImmediate(t *testing.T) {
-	uffd, err := New(flags|unix.O_NONBLOCK, 0)
+	uffd, err := New(flags, 0)
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
@@ -135,7 +139,7 @@ func TestReadMsgTimeoutImmediate(t *testing.T) {
 }
 
 func TestReadMsgTimeoutShort(t *testing.T) {
-	uffd, err := New(flags|unix.O_NONBLOCK, 0)
+	uffd, err := New(flags, 0)
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
@@ -148,20 +152,6 @@ func TestReadMsgTimeoutShort(t *testing.T) {
 	}
 	if !errors.Is(err, unix.EAGAIN) {
 		t.Fatalf("unexpected error from ReadMsgTimeout(50): %v", err)
-	}
-}
-
-func TestReadMsgTimeoutBlocking(t *testing.T) {
-	uffd, err := New(flags, 0)
-	if err != nil {
-		t.Fatalf("New failed: %v", err)
-	}
-	defer uffd.Close()
-
-	_, err = uffd.ReadMsgTimeout(-1)
-	var perr *PollError
-	if !errors.As(err, &perr) {
-		t.Fatalf("expected PollError, got %T: %v", err, err)
 	}
 }
 
@@ -218,48 +208,6 @@ func TestReadMsgTimeoutTable(t *testing.T) {
 				}
 			},
 		},
-		{
-			name:    "blocking-timeout0",
-			flags:   flags,
-			timeout: 0,
-			expectFn: func(t *testing.T, err error, elapsed time.Duration) {
-				var perr *PollError
-				if !errors.As(err, &perr) {
-					t.Fatalf("expected PollError, got %T: %v", err, err)
-				}
-				if elapsed > 10*time.Millisecond {
-					t.Fatalf("timeout=0 must return immediately; took %v", elapsed)
-				}
-			},
-		},
-		{
-			name:    "blocking-timeout-positive",
-			flags:   flags,
-			timeout: 50,
-			expectFn: func(t *testing.T, err error, elapsed time.Duration) {
-				var perr *PollError
-				if !errors.As(err, &perr) {
-					t.Fatalf("expected PollError, got %T: %v", err, err)
-				}
-				if elapsed > 10*time.Millisecond {
-					t.Fatalf("blocking FD must not wait: %v", elapsed)
-				}
-			},
-		},
-		{
-			name:    "blocking-timeout-negative",
-			flags:   flags,
-			timeout: -1,
-			expectFn: func(t *testing.T, err error, elapsed time.Duration) {
-				var perr *PollError
-				if !errors.As(err, &perr) {
-					t.Fatalf("expected PollError, got %T: %v", err, err)
-				}
-				if elapsed > 10*time.Millisecond {
-					t.Fatalf("must return immediately, took %v", elapsed)
-				}
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -296,5 +244,61 @@ func TestReadMsgTimeoutTable(t *testing.T) {
 
 			tt.expectFn(t, resultErr, time.Since(start))
 		})
+	}
+}
+
+func TestUffdWithLocalFile(t *testing.T) {
+	f, err := os.Open("/bin/bash")
+	if err != nil {
+		t.Skipf("skipping: testdata file missing: %v", err)
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		t.Fatalf("stat failed: %v", err)
+	}
+	size := int(info.Size())
+
+	u, err := New(flags, 0)
+	if err != nil {
+		t.Skipf("skipping: userfaultfd not available: %v", err)
+	}
+	defer u.Close()
+
+	length := (size + pageSize - 1) &^ (pageSize - 1)
+
+	mem, err := unix.Mmap(-1, 0, length, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_PRIVATE|unix.MAP_ANONYMOUS)
+	if err != nil {
+		t.Fatalf("mmap failed: %v", err)
+	}
+	defer unix.Munmap(mem)
+
+	start := uintptr(unsafe.Pointer(&mem[0]))
+
+	if _, err := u.Register(start, length, UFFDIO_REGISTER_MODE_MISSING); err != nil {
+		t.Fatalf("skipping: UFFD register failed: %v", err)
+	}
+
+	go func() {
+		_ = u.Serve(start, f)
+	}()
+
+	// Touch the mapping to trigger faults over the region
+	data := mem[:size]
+
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		t.Fatalf("seek failed: %v", err)
+	}
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		t.Fatalf("failed computing reference hash: %v", err)
+	}
+	expectedHash := h.Sum(nil)
+
+	actualHash := sha256.Sum256(data[:size])
+
+	if !bytes.Equal(expectedHash, actualHash[:]) {
+		t.Fatalf("content mismatch: expected %x got %x", expectedHash, actualHash)
 	}
 }

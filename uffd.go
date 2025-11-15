@@ -3,7 +3,9 @@
 package userfaultfd
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"unsafe"
 
@@ -12,15 +14,15 @@ import (
 
 // Uffd wraps a userfaultfd file descriptor.
 type Uffd struct {
-	File  *os.File
-	api   *UffdioApi
-	flags int
+	File *os.File
+	api  *UffdioApi
 }
 
 // New creates a new userfaultfd and performs the two-step API handshake.
 // Returns an *Uffd or an error.
 func New(flags int, features uint64) (*Uffd, error) {
-	file, err := Open(flags)
+	// Force O_NONBLOCK as we're using poll before read to detect errors
+	file, err := Open(flags | unix.O_NONBLOCK)
 	if err != nil {
 		return nil, err
 	}
@@ -55,9 +57,8 @@ func New(flags int, features uint64) (*Uffd, error) {
 	}
 
 	return &Uffd{
-		File:  file,
-		api:   api,
-		flags: flags,
+		File: file,
+		api:  api,
 	}, nil
 }
 
@@ -137,17 +138,6 @@ func (u *Uffd) Zeropage(start uintptr, length int, mode int) (int64, error) {
 }
 
 // ReadMsgTimeout reads one event message from the userfaultfd.
-//
-// timeout semantics:
-//   timeout == 0   : non-blocking poll/read; return immediately if no event
-//   timeout > 0    : wait up to timeout milliseconds for an event
-//   timeout < 0    : block indefinitely until an event arrives
-//
-// For file descriptors opened with O_NONBLOCK, read() returns EAGAIN when no
-// event is available. For blocking file descriptors, poll(2) always reports
-// POLLERR immediately (see userfaultfd(2)), so timeout values for
-// blocking descriptors do not affect behavior.
-//
 // On POLLERR, POLLHUP, or POLLNVAL, a *PollError is returned.
 func (u *Uffd) ReadMsgTimeout(timeout int) (*UffdMsg, error) {
 	pfd := []unix.PollFd{{
@@ -190,18 +180,62 @@ func (u *Uffd) ReadMsgTimeout(timeout int) (*UffdMsg, error) {
 	return &msg, nil
 }
 
-// ReadMsg reads a single event message from the userfaultfd, blocking
-// according to the descriptor's file status flags.
-//
-// If O_NONBLOCK was specified when creating the userfaultfd, ReadMsg behaves
-// as a non-blocking read and returns a wrapped EAGAIN error if no event data
-// is available.
-//
-// If O_NONBLOCK was not specified, ReadMsg blocks indefinitely waiting for
-// the next available event and will not return until an event is delivered
-// or a terminal poll condition occurs (POLLERR, POLLHUP, or POLLNVAL).
-//
-// Internally, ReadMsg is equivalent to ReadMsgTimeout(-1).
+// ReadMsg reads a single event message from the userfaultfd
 func (u *Uffd) ReadMsg() (*UffdMsg, error) {
-	return u.ReadMsgTimeout(-1)
+	for {
+		m, err := u.ReadMsgTimeout(-1)
+		if errors.Is(err, unix.EAGAIN) {
+			continue
+		}
+		return m, err
+	}
+}
+
+// Serve runs a pagefault loop and resolves faults using the provided src.
+// Blocks until closed or provider returns a non-nil error.
+func (u *Uffd) Serve(start uintptr, src io.ReaderAt) error {
+	// Use mmap to get page-aligned memory
+	mem, err := unix.Mmap(-1, 0, pageSize, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_PRIVATE|unix.MAP_ANONYMOUS)
+	if err != nil {
+		return os.NewSyscallError("mmap", err)
+	}
+	defer unix.Munmap(mem)
+
+	for {
+		msg, err := u.ReadMsg()
+		if err != nil {
+			return err
+		}
+		if msg.Event != UFFD_EVENT_PAGEFAULT {
+			continue
+		}
+
+		addr := uintptr(msg.GetPagefault().Address)
+		// Byte offset into src
+		offset := int64(addr - start)
+
+		// Read from src into memory
+		n, err := src.ReadAt(mem, offset)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return fmt.Errorf("reader error at offset %d: %w", offset, err)
+		}
+		for i := n; i < pageSize; i++ {
+			mem[i] = 0
+		}
+
+		// Copy or Move to destination
+		// TODO Add benchmark for Move vs Copy
+		if HaveIoctlMove {
+			_, err = u.Move(addr, uintptr(unsafe.Pointer(&mem[0])), pageSize, 0)
+		} else {
+			_, err = u.Copy(addr, uintptr(unsafe.Pointer(&mem[0])), pageSize, 0)
+		}
+		if err != nil {
+			// Page already mapped
+			if errors.Is(err, unix.EEXIST) {
+				continue
+			}
+			return fmt.Errorf("Move failed at 0x%x offset %d: %w", addr, offset, err)
+		}
+	}
 }
