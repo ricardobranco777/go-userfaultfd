@@ -363,8 +363,9 @@ func TestUffdWithLocalFile(t *testing.T) {
 
 	// Touch the mapping to trigger faults over the region
 	data := full[:size]
+
 	for i := int64(0); i < size; i += int64(pageSize) {
-		_ = data[i] // trigger fault
+		_ = data[i]
 	}
 
 	// Give the handler some time to process
@@ -377,12 +378,16 @@ func TestUffdWithLocalFile(t *testing.T) {
 		// ok: still running, no panic, page faults resolved
 	}
 
-	// --- Hash original file
-	f.Seek(0, io.SeekStart)
-	expectedHash, err := computeHash(f)
-	if err != nil {
+	// --- Hash original file (only first 'size' bytes)
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		t.Fatalf("seek failed: %v", err)
+	}
+
+	h1 := sha256.New()
+	if _, err := io.CopyN(h1, f, size); err != nil && !errors.Is(err, io.EOF) {
 		t.Fatalf("failed computing reference hash: %v", err)
 	}
+	expectedHash := h1.Sum(nil)
 
 	// --- Hash content of mmap region (which fault-handled data)
 	h2 := sha256.New()
