@@ -257,6 +257,10 @@ func (u *Uffd) Serve(base uintptr, mapLen int, pageSize int, provider PageProvid
 
 func ReaderAtPageProvider(r io.ReaderAt) PageProvider {
 	return func(offset int64, page []byte) (int, error) {
-		return r.ReadAt(page, offset)
+		n, err := r.ReadAt(page, offset)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return n, err
+		}
+		return n, nil
 	}
 }
