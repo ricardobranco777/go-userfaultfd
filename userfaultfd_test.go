@@ -65,7 +65,7 @@ func TestApiHandshake(t *testing.T) {
 	}
 	defer f.Close()
 
-	api, err := ApiHandshake(int(f.Fd()), 0)
+	api, err := ApiHandshake(f.Fd(), 0)
 	if err != nil {
 		t.Fatalf("ApiHandshake failed: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestRegisterAndUnregister(t *testing.T) {
 	}
 	defer f.Close()
 
-	if _, err = ApiHandshake(int(f.Fd()), 0); err != nil {
+	if _, err = ApiHandshake(f.Fd(), 0); err != nil {
 		t.Fatalf("ApiHandshake failed: %v", err)
 	}
 
@@ -108,17 +108,17 @@ func TestRegisterAndUnregister(t *testing.T) {
 	addr := uintptr(unsafe.Pointer(&mem[0]))
 
 	// Attempt registration
-	if _, err = Register(int(f.Fd()), addr, pageSize, UFFDIO_REGISTER_MODE_MISSING); err != nil {
+	if _, err = Register(f.Fd(), addr, pageSize, UFFDIO_REGISTER_MODE_MISSING); err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
 
 	// Now unregister
-	if err := Unregister(int(f.Fd()), addr, pageSize); err != nil {
+	if err := Unregister(f.Fd(), addr, pageSize); err != nil {
 		t.Fatalf("Unregister failed: %v", err)
 	}
 }
 
-func setupUserfaultfd(t *testing.T, features uint64) (fd int, addr uintptr, cleanup func()) {
+func setupUserfaultfd(t *testing.T, features uint64) (fd uintptr, addr uintptr, cleanup func()) {
 	t.Helper()
 
 	f, err := Open(flags)
@@ -126,7 +126,7 @@ func setupUserfaultfd(t *testing.T, features uint64) (fd int, addr uintptr, clea
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	api, err := ApiHandshake(int(f.Fd()), 0)
+	api, err := ApiHandshake(f.Fd(), 0)
 	if err != nil {
 		f.Close()
 		t.Fatalf("ApiHandshake (enable features) failed: %v", err)
@@ -138,13 +138,13 @@ func setupUserfaultfd(t *testing.T, features uint64) (fd int, addr uintptr, clea
 			t.Fatalf("Create failed: %v", err)
 		}
 		got := api.Features
-		if _, err = ApiHandshake(int(f.Fd()), features); err != nil {
+		if _, err = ApiHandshake(f.Fd(), features); err != nil {
 			f.Close()
 			t.Skipf("requested features 0x%x not fully supported (got 0x%x)", features, got)
 		}
 	}
 
-	fd = int(f.Fd())
+	fd = f.Fd()
 
 	pageSize := unix.Getpagesize()
 	mem, err := unix.Mmap(-1, 0, pageSize, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_PRIVATE|unix.MAP_ANONYMOUS)
@@ -185,7 +185,7 @@ func TestContinue(t *testing.T) {
 	}
 	defer f.Close()
 
-	if _, err = ApiHandshake(int(f.Fd()), UFFD_FEATURE_MINOR_SHMEM); err != nil {
+	if _, err = ApiHandshake(f.Fd(), UFFD_FEATURE_MINOR_SHMEM); err != nil {
 		if errors.Is(err, unix.EINVAL) {
 			t.Skip("Unsupported UFFD_FEATURE_MINOR_SHMEM")
 		} else {
@@ -193,7 +193,7 @@ func TestContinue(t *testing.T) {
 		}
 	}
 
-	fd := int(f.Fd())
+	fd := f.Fd()
 
 	// Create a temporary file backed by tmpfs/shmem
 	tmp, err := os.CreateTemp("/dev/shm", "uffd_test")

@@ -25,7 +25,7 @@ func New(flags int, features uint64) (*Uffd, error) {
 		return nil, err
 	}
 
-	api, err := ApiHandshake(int(file.Fd()), 0)
+	api, err := ApiHandshake(file.Fd(), 0)
 	if err != nil {
 		file.Close()
 		return nil, err
@@ -48,7 +48,7 @@ func New(flags int, features uint64) (*Uffd, error) {
 		if file, err = Open(flags); err != nil {
 			return nil, err
 		}
-		if api, err = ApiHandshake(int(file.Fd()), features); err != nil {
+		if api, err = ApiHandshake(file.Fd(), features); err != nil {
 			file.Close()
 			return nil, err
 		}
@@ -93,47 +93,47 @@ func (u *Uffd) HasIoctl(ioctl int) bool {
 
 // Continue resolves a minor page fault.
 func (u *Uffd) Continue(start uintptr, length int, mode int) error {
-	return Continue(u.Fd(), start, length, mode)
+	return Continue(u.File.Fd(), start, length, mode)
 }
 
 // Copy resolves a page fault by copying from src to dst.
 func (u *Uffd) Copy(dst, src uintptr, length int, mode int) (int64, error) {
-	return Copy(u.Fd(), dst, src, length, mode)
+	return Copy(u.File.Fd(), dst, src, length, mode)
 }
 
 // Move moves pages from src to dst.
 func (u *Uffd) Move(dst, src uintptr, length int, mode int) (int64, error) {
-	return Move(u.Fd(), dst, src, length, mode)
+	return Move(u.File.Fd(), dst, src, length, mode)
 }
 
 // Poison poisons pages in the given range.
 func (u *Uffd) Poison(start uintptr, length int, mode int) (int64, error) {
-	return Poison(u.Fd(), start, length, mode)
+	return Poison(u.File.Fd(), start, length, mode)
 }
 
 // Register registers a memory range with the given mode.
 func (u *Uffd) Register(start uintptr, length int, mode int) (*UffdioRegister, error) {
-	return Register(u.Fd(), start, length, mode)
+	return Register(u.File.Fd(), start, length, mode)
 }
 
 // Unregister unregisters a previously registered range.
 func (u *Uffd) Unregister(start uintptr, length int) error {
-	return Unregister(u.Fd(), start, length)
+	return Unregister(u.File.Fd(), start, length)
 }
 
 // Wake wakes blocked page faults in the given range.
 func (u *Uffd) Wake(start uintptr, length int) error {
-	return Wake(u.Fd(), start, length)
+	return Wake(u.File.Fd(), start, length)
 }
 
 // WriteProtect enables/disables write protection.
 func (u *Uffd) WriteProtect(start uintptr, length int, mode int) error {
-	return WriteProtect(u.Fd(), start, length, mode)
+	return WriteProtect(u.File.Fd(), start, length, mode)
 }
 
 // Zeropage zero-fills a memory range.
 func (u *Uffd) Zeropage(start uintptr, length int, mode int) (int64, error) {
-	return Zeropage(u.Fd(), start, length, mode)
+	return Zeropage(u.File.Fd(), start, length, mode)
 }
 
 // ReadMsgTimeout reads one event message from the userfaultfd,
