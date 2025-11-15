@@ -12,38 +12,20 @@ import (
 
 // Uffd wraps a userfaultfd file descriptor.
 type Uffd struct {
-	File  *os.File
-	api   *UffdioApi
-	flags int
+	File *os.File
+	api  *UffdioApi
 }
-
-// Force non-blocking so we can use poll()
-// Also force close-on-exec
-const force = unix.O_NONBLOCK | unix.O_CLOEXEC
 
 // New creates a new userfaultfd and performs the two-step API handshake.
 // Returns an *Uffd or an error.
 func New(flags int, features uint64) (*Uffd, error) {
-	flags |= force
-	file, err := NewFile(flags)
+	// Force non-blocking so we can use poll() & also force close-on-exec.
+	flags |= unix.O_NONBLOCK | unix.O_CLOEXEC
+	file, err := Open(flags)
 	if err != nil {
 		return nil, err
 	}
-	return newCommon(file, flags, features)
-}
 
-// NewDevUserfaultfd creates a new userfaultfd and performs the two-step API handshake.
-// Returns an *Uffd or an error.
-func New2(flags int, features uint64) (*Uffd, error) {
-	flags |= force
-	file, err := NewFile2(flags)
-	if err != nil {
-		return nil, err
-	}
-	return newCommon(file, flags, features)
-}
-
-func newCommon(file *os.File, flags int, features uint64) (*Uffd, error) {
 	api, err := ApiHandshake(int(file.Fd()), 0)
 	if err != nil {
 		file.Close()
@@ -64,7 +46,7 @@ func newCommon(file *os.File, flags int, features uint64) (*Uffd, error) {
 		if api.Features&features != features {
 			return nil, ErrUnsupportedFeature
 		}
-		if file, err = NewFile(flags); err != nil {
+		if file, err = Open(flags); err != nil {
 			return nil, err
 		}
 		if api, err = ApiHandshake(int(file.Fd()), features); err != nil {
@@ -74,9 +56,8 @@ func newCommon(file *os.File, flags int, features uint64) (*Uffd, error) {
 	}
 
 	return &Uffd{
-		File:  file,
-		api:   api,
-		flags: flags,
+		File: file,
+		api:  api,
 	}, nil
 }
 
