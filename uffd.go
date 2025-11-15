@@ -18,7 +18,8 @@ type Uffd struct {
 }
 
 // Force non-blocking so we can use poll()
-const force = unix.O_NONBLOCK
+// Also force close-on-exec
+const force = unix.O_NONBLOCK | unix.O_CLOEXEC
 
 // New creates a new userfaultfd and performs the two-step API handshake.
 // Returns an *Uffd or an error.

@@ -21,6 +21,16 @@ func TestNew(t *testing.T) {
 		t.Errorf("invalid fd: %d", uffd.Fd())
 	}
 
+	fdFlags, _ := unix.FcntlInt(uintptr(uffd.Fd()), unix.F_GETFD, 0)
+	if fdFlags&unix.FD_CLOEXEC == 0 {
+		t.Errorf("FD_CLOEXEC not set")
+	}
+
+	fl, _ := unix.FcntlInt(uintptr(uffd.Fd()), unix.F_GETFL, 0)
+	if fl&unix.O_NONBLOCK == 0 {
+		t.Errorf("O_NONBLOCK not set")
+	}
+
 	uffd.Close()
 	if err := unix.Close(uffd.Fd()); err == nil {
 		t.Fatal("Close failed")
