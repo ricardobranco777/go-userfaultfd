@@ -314,7 +314,7 @@ func computeHash(r io.Reader) ([]byte, error) {
 
 func TestUffdWithLocalFile(t *testing.T) {
 	// Open a local file we can page in
-	f, err := os.Open("testdata/largefile.bin")
+	f, err := os.Open("/bin/bash")
 	if err != nil {
 		t.Skipf("skipping: testdata file missing: %v", err)
 	}
