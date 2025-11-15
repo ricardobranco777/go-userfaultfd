@@ -13,7 +13,7 @@ import (
 
 func TestNew(t *testing.T) {
 	// Try creating a userfaultfd with no special features
-	uffd, err := New(flags | unix.O_NONBLOCK | unix.O_CLOEXEC, 0)
+	uffd, err := New(flags|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}

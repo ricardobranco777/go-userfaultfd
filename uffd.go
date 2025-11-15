@@ -12,8 +12,9 @@ import (
 
 // Uffd wraps a userfaultfd file descriptor.
 type Uffd struct {
-	File *os.File
-	api  *UffdioApi
+	File  *os.File
+	api   *UffdioApi
+	flags int
 }
 
 // New creates a new userfaultfd and performs the two-step API handshake.
@@ -54,8 +55,9 @@ func New(flags int, features uint64) (*Uffd, error) {
 	}
 
 	return &Uffd{
-		File: file,
-		api:  api,
+		File:  file,
+		api:   api,
+		flags: flags,
 	}, nil
 }
 
@@ -159,9 +161,13 @@ func (u *Uffd) ReadMsgTimeout(timeout int) (*UffdMsg, error) {
 	}); err != nil {
 		return nil, os.NewSyscallError("poll", err)
 	}
-	re := pfd[0].Revents
-	if re&(unix.POLLERR|unix.POLLHUP|unix.POLLNVAL) != 0 {
-		return nil, &PollError{Revents: re}
+	// From userfaultfd(2):
+	// If the O_NONBLOCK flag is not enabled, then poll(2) (always) indicates the file as having a POLLERR condition.
+	if u.flags&unix.O_NONBLOCK != 0 {
+		re := pfd[0].Revents
+		if re&(unix.POLLERR|unix.POLLHUP|unix.POLLNVAL) != 0 {
+			return nil, &PollError{Revents: re}
+		}
 	}
 
 	var msg UffdMsg
