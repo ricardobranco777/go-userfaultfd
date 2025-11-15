@@ -20,5 +20,7 @@ Similar projects:
 
 More information at:
 - https://docs.kernel.org/admin-guide/mm/userfaultfd.html
+- https://man.archlinux.org/man/userfaultfd.2.en
+- https://man.archlinux.org/man/ioctl_userfaultfd.2.en
 - https://www.cons.org/cracauer/cracauer-userfaultfd.html
 - https://lwn.net/Articles/897260/
