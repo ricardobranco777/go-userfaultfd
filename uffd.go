@@ -153,16 +153,49 @@ func (u *Uffd) Zeropage(start uintptr, length int, mode int) (int64, error) {
 // It blocks until an event is available unless the fd is nonblocking.
 // Returns the message and any read or decoding error.
 func (u *Uffd) ReadMsg() (*UffdMsg, error) {
-	var msg UffdMsg
-	const msgSize = int(unsafe.Sizeof(msg))
-	buf := (*[msgSize]byte)(unsafe.Pointer(&msg))[:]
+	// Non-blocking case: poll first
+	if u.flags&unix.O_NONBLOCK != 0 {
+		pfd := []unix.PollFd{{
+			Fd:     int32(u.Fd()),
+			Events: unix.POLLIN,
+		}}
 
-	n, err := unix.Read(u.Fd(), buf)
-	if err != nil {
-		return nil, os.NewSyscallError("read", err)
+		for {
+			n, err := unix.Poll(pfd, 0)
+			if err != nil {
+				if err == unix.EINTR {
+					continue
+				}
+				return nil, os.NewSyscallError("poll", err)
+			}
+
+			if n == 0 {
+				return nil, os.NewSyscallError("poll", unix.EAGAIN)
+			}
+
+			re := pfd[0].Revents
+			if re&(unix.POLLERR|unix.POLLHUP|unix.POLLNVAL) != 0 {
+				return nil, fmt.Errorf("poll error: revents=%#x", re)
+			}
+			break
+		}
 	}
-	if n != msgSize {
-		return nil, fmt.Errorf("truncated read: got %d bytes, expected %d", n, msgSize)
+
+	var msg UffdMsg
+	buf := (*[unsafe.Sizeof(msg)]byte)(unsafe.Pointer(&msg))[:]
+
+	for {
+		n, err := unix.Read(u.Fd(), buf)
+		if err != nil {
+			if err == unix.EINTR {
+				continue
+			}
+			return nil, os.NewSyscallError("read", err)
+		}
+
+		if n != len(buf) {
+			return nil, fmt.Errorf("truncated read: got %d, expected %d", n, len(buf))
+		}
+		return &msg, nil
 	}
-	return &msg, nil
 }

@@ -4,6 +4,7 @@ package userfaultfd
 
 import (
 	"errors"
+	"os"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -81,9 +82,33 @@ func TestReadMsgNoEvent(t *testing.T) {
 
 	_, err = uffd.ReadMsg()
 	if err == nil {
-		t.Fatalf("expected EAGAIN or EWOULDBLOCK, got nil")
+		t.Fatalf("expected EAGAIN, got nil")
 	}
-	if !errors.Is(err, unix.EAGAIN) && !errors.Is(err, unix.EWOULDBLOCK) {
+	if !errors.Is(err, unix.EAGAIN) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestReadMsgNonBlocking(t *testing.T) {
+	uffd, err := New(flags|unix.O_NONBLOCK, 0)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer uffd.Close()
+
+	// Explicitly verify polling behavior inside ReadMsg() with non-blocking FD
+	_, err = uffd.ReadMsg()
+	if err == nil {
+		t.Fatalf("expected EAGAIN from nonblocking read, got nil")
+	}
+
+	// ReadMsg wraps read errors in os.NewSyscallError("read", err)
+	var serr *os.SyscallError
+	if !errors.As(err, &serr) {
+		t.Fatalf("expected *os.SyscallError wrapping EAGAIN, got %T: %v", err, err)
+	}
+
+	if !errors.Is(serr.Err, unix.EAGAIN) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
