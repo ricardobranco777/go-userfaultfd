@@ -136,16 +136,19 @@ func (u *Uffd) Zeropage(start uintptr, length int, mode int) (int64, error) {
 	return Zeropage(u.File.Fd(), start, length, mode)
 }
 
-// ReadMsgTimeout reads one event message from the userfaultfd,
-// waiting up to timeout milliseconds for an event.
+// ReadMsgTimeout reads one event message from the userfaultfd.
 //
 // timeout semantics:
+//   timeout == 0   : non-blocking poll/read; return immediately if no event
+//   timeout > 0    : wait up to timeout milliseconds for an event
+//   timeout < 0    : block indefinitely until an event arrives
 //
-//	 0  : return immediately if no event
-//	>0 : wait up to timeout milliseconds
-//	<0 : block indefinitely
+// For file descriptors opened with O_NONBLOCK, read() returns EAGAIN when no
+// event is available. For blocking file descriptors, poll(2) always reports
+// POLLERR immediately (see userfaultfd(2)), so timeout values for
+// blocking descriptors do not affect behavior.
 //
-// Returns wrapped unix.EAGAIN if the timeout expires.
+// On POLLERR, POLLHUP, or POLLNVAL, a *PollError is returned.
 func (u *Uffd) ReadMsgTimeout(timeout int) (*UffdMsg, error) {
 	pfd := []unix.PollFd{{
 		Fd:     int32(u.Fd()),
@@ -163,11 +166,9 @@ func (u *Uffd) ReadMsgTimeout(timeout int) (*UffdMsg, error) {
 	}
 	// From userfaultfd(2):
 	// If the O_NONBLOCK flag is not enabled, then poll(2) (always) indicates the file as having a POLLERR condition.
-	if u.flags&unix.O_NONBLOCK != 0 {
-		re := pfd[0].Revents
-		if re&(unix.POLLERR|unix.POLLHUP|unix.POLLNVAL) != 0 {
-			return nil, &PollError{Revents: re}
-		}
+	re := pfd[0].Revents
+	if re&(unix.POLLERR|unix.POLLHUP|unix.POLLNVAL) != 0 {
+		return nil, &PollError{Revents: re}
 	}
 
 	var msg UffdMsg
@@ -189,8 +190,18 @@ func (u *Uffd) ReadMsgTimeout(timeout int) (*UffdMsg, error) {
 	return &msg, nil
 }
 
-// ReadMsg attempts to read one event message without blocking.
-// If no event is available, it returns wrapped unix.EAGAIN.
+// ReadMsg reads a single event message from the userfaultfd, blocking
+// according to the descriptor's file status flags.
+//
+// If O_NONBLOCK was specified when creating the userfaultfd, ReadMsg behaves
+// as a non-blocking read and returns a wrapped EAGAIN error if no event data
+// is available.
+//
+// If O_NONBLOCK was not specified, ReadMsg blocks indefinitely waiting for
+// the next available event and will not return until an event is delivered
+// or a terminal poll condition occurs (POLLERR, POLLHUP, or POLLNVAL).
+//
+// Internally, ReadMsg is equivalent to ReadMsgTimeout(-1).
 func (u *Uffd) ReadMsg() (*UffdMsg, error) {
-	return u.ReadMsgTimeout(0)
+	return u.ReadMsgTimeout(-1)
 }

@@ -56,12 +56,18 @@ func TestReadMsgNoEvent(t *testing.T) {
 	}
 	defer uffd.Close()
 
-	_, err = uffd.ReadMsg()
-	if err == nil {
-		t.Fatalf("expected EAGAIN, got nil")
-	}
-	if !errors.Is(err, unix.EAGAIN) {
-		t.Fatalf("unexpected error: %v", err)
+	done := make(chan struct{})
+	go func() {
+		// ReadMsg blocks forever now, so never returns
+		_, _ = uffd.ReadMsg()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		t.Fatalf("ReadMsg returned unexpectedly")
+	case <-time.After(50 * time.Millisecond):
+		// expected
 	}
 }
 
@@ -72,13 +78,12 @@ func TestReadMsgNonBlocking(t *testing.T) {
 	}
 	defer uffd.Close()
 
-	// Explicitly verify polling behavior inside ReadMsg() with non-blocking FD
-	_, err = uffd.ReadMsg()
+	// Non-blocking poll attempt
+	_, err = uffd.ReadMsgTimeout(0)
 	if err == nil {
 		t.Fatalf("expected EAGAIN from nonblocking read, got nil")
 	}
 
-	// ReadMsg wraps read errors in os.NewSyscallError("read", err)
 	var serr *os.SyscallError
 	if !errors.As(err, &serr) {
 		t.Fatalf("expected *os.SyscallError wrapping EAGAIN, got %T: %v", err, err)
@@ -153,18 +158,143 @@ func TestReadMsgTimeoutBlocking(t *testing.T) {
 	}
 	defer uffd.Close()
 
-	done := make(chan struct{})
+	_, err = uffd.ReadMsgTimeout(-1)
+	var perr *PollError
+	if !errors.As(err, &perr) {
+		t.Fatalf("expected PollError, got %T: %v", err, err)
+	}
+}
 
-	go func() {
-		// Should block here waiting for poll(-1)
-		_, _ = uffd.ReadMsgTimeout(-1)
-		close(done)
-	}()
+func TestReadMsgTimeoutTable(t *testing.T) {
+	tests := []struct {
+		name     string
+		flags    int
+		timeout  int
+		expectFn func(t *testing.T, err error, elapsed time.Duration)
+	}{
+		{
+			name:    "nonblocking-timeout0",
+			flags:   flags | unix.O_NONBLOCK,
+			timeout: 0,
+			expectFn: func(t *testing.T, err error, elapsed time.Duration) {
+				if err == nil {
+					t.Fatalf("expected EAGAIN, got nil")
+				}
+				if !errors.Is(err, unix.EAGAIN) {
+					t.Fatalf("expected EAGAIN, got %v", err)
+				}
+				if elapsed > 10*time.Millisecond {
+					t.Fatalf("nonblocking timeout=0 should return immediately, took %v", elapsed)
+				}
+			},
+		},
+		{
+			name:    "nonblocking-timeout-positive",
+			flags:   flags | unix.O_NONBLOCK,
+			timeout: 50,
+			expectFn: func(t *testing.T, err error, elapsed time.Duration) {
+				if err == nil {
+					t.Fatalf("expected EAGAIN, got nil")
+				}
+				if !errors.Is(err, unix.EAGAIN) {
+					t.Fatalf("expected EAGAIN, got %v", err)
+				}
+				if elapsed < 45*time.Millisecond {
+					t.Fatalf("timeout did not wait long enough: %v", elapsed)
+				}
+			},
+		},
+		{
+			name:    "nonblocking-timeout-negative",
+			flags:   flags | unix.O_NONBLOCK,
+			timeout: -1,
+			expectFn: func(t *testing.T, err error, elapsed time.Duration) {
+				// should block forever -> must not return within test window
+				if err != nil {
+					t.Fatalf("expected block, got err=%v", err)
+				}
+				if elapsed < 40*time.Millisecond {
+					t.Fatalf("should block indefinitely, returned after %v", elapsed)
+				}
+			},
+		},
+		{
+			name:    "blocking-timeout0",
+			flags:   flags,
+			timeout: 0,
+			expectFn: func(t *testing.T, err error, elapsed time.Duration) {
+				var perr *PollError
+				if !errors.As(err, &perr) {
+					t.Fatalf("expected PollError, got %T: %v", err, err)
+				}
+				if elapsed > 10*time.Millisecond {
+					t.Fatalf("timeout=0 must return immediately; took %v", elapsed)
+				}
+			},
+		},
+		{
+			name:    "blocking-timeout-positive",
+			flags:   flags,
+			timeout: 50,
+			expectFn: func(t *testing.T, err error, elapsed time.Duration) {
+				var perr *PollError
+				if !errors.As(err, &perr) {
+					t.Fatalf("expected PollError, got %T: %v", err, err)
+				}
+				if elapsed > 10*time.Millisecond {
+					t.Fatalf("blocking FD must not wait: %v", elapsed)
+				}
+			},
+		},
+		{
+			name:    "blocking-timeout-negative",
+			flags:   flags,
+			timeout: -1,
+			expectFn: func(t *testing.T, err error, elapsed time.Duration) {
+				var perr *PollError
+				if !errors.As(err, &perr) {
+					t.Fatalf("expected PollError, got %T: %v", err, err)
+				}
+				if elapsed > 10*time.Millisecond {
+					t.Fatalf("must return immediately, took %v", elapsed)
+				}
+			},
+		},
+	}
 
-	select {
-	case <-done:
-		t.Fatalf("ReadMsgTimeout(-1) returned unexpectedly without event")
-	case <-time.After(50 * time.Millisecond):
-		// expected: timeout waiting for blocking call to return
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			uffd, err := New(tt.flags, 0)
+			if err != nil {
+				t.Fatalf("New failed: %v", err)
+			}
+			defer uffd.Close()
+
+			done := make(chan error, 1)
+			start := time.Now()
+
+			go func() {
+				_, err := uffd.ReadMsgTimeout(tt.timeout)
+				done <- err
+			}()
+
+			var resultErr error
+
+			if tt.timeout < 0 {
+				// block indefinitely: expect no result in 40ms
+				select {
+				case resultErr = <-done:
+				case <-time.After(40 * time.Millisecond):
+				}
+			} else {
+				select {
+				case resultErr = <-done:
+				case <-time.After(time.Duration(tt.timeout+20) * time.Millisecond):
+					t.Fatalf("ReadMsgTimeout(%d) hung unexpectedly", tt.timeout)
+				}
+			}
+
+			tt.expectFn(t, resultErr, time.Since(start))
+		})
 	}
 }
