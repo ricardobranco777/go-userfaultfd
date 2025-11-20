@@ -1,9 +1,6 @@
 
 Golang interface to Linux's [userfaultfd](https://man7.org/linux/man-pages/man2/userfaultfd.2.html) system call.
 
-TODO
-- Implement higher level API.
-
 NOTES
 - Must set `vm.unprivileged_userfaultfd` as user for some features.
 
@@ -19,6 +16,7 @@ Similar projects:
 - https://github.com/loopholelabs/userfaultfd-go
 
 More information at:
+- https://github.com/torvalds/linux/blob/master/mm/userfaultfd.c
 - https://docs.kernel.org/admin-guide/mm/userfaultfd.html
 - https://man.archlinux.org/man/userfaultfd.2.en
 - https://man.archlinux.org/man/ioctl_userfaultfd.2.en
