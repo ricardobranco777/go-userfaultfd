@@ -1,4 +1,7 @@
 
+[![GoDoc](https://godoc.org/github.com/ricardobranco777/go-userfaultfd?status.svg)](https://godoc.org/github.com/ricardobranco777/go-userfaultfd)
+![Build Status](https://github.com/ricardobranco777/go-userfaultfd/actions/workflows/ci.yml/badge.svg)
+
 Golang interface to Linux's [userfaultfd](https://man7.org/linux/man-pages/man2/userfaultfd.2.html) system call.
 
 NOTES
