@@ -215,12 +215,8 @@ func (u *Uffd) Serve(start uintptr, src io.ReaderAt) error {
 		offset := int64(addr - start)
 
 		// Read from src into memory
-		n, err := src.ReadAt(mem, offset)
-		if err != nil && !errors.Is(err, io.EOF) {
+		if _, err := src.ReadAt(mem, offset); err != nil && !errors.Is(err, io.EOF) {
 			return fmt.Errorf("reader error at offset %d: %w", offset, err)
-		}
-		for i := n; i < pageSize; i++ {
-			mem[i] = 0
 		}
 
 		// Copy or Move to destination
