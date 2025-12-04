@@ -64,7 +64,11 @@ func New(flags int, features uint64) (*Uffd, error) {
 
 // Close closes the underlying file descriptor.
 func (u *Uffd) Close() error {
-	return u.File.Close()
+	if u.File != nil {
+		return u.File.Close()
+	}
+	u.File = nil
+	return nil
 }
 
 // FD returns the underlying file descriptor.
