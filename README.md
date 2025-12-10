@@ -7,14 +7,6 @@ Golang interface to Linux's [userfaultfd](https://man7.org/linux/man-pages/man2/
 NOTES
 - Must set `vm.unprivileged_userfaultfd` as user for some features.
 
-Tested on:
-| Arch | notes |
-|---|---|
-| arm64 | Debian 13 with kernel 6.12 and `CONFIG_USERFAULTFD` not set |
-| amd64 | Fedora 43 with kernel 6.17 |
-| ppc64le | SLES 15-SP3 with kernel 5.3 |
-| s390x | SLES 16.0 with kernel 6.12 |
-
 Similar projects:
 - https://github.com/loopholelabs/userfaultfd-go
 
