@@ -2,4 +2,4 @@ module github.com/ricardobranco777/go-userfaultfd
 
 go 1.25.0
 
-require golang.org/x/sys v0.37.0
+require golang.org/x/sys v0.41.0
